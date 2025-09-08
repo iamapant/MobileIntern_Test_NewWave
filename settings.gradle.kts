@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MobileIntern_Test_NewWave"
 include(":app")
+ 
