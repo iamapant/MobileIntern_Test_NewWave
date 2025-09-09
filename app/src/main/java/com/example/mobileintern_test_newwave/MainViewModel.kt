@@ -4,16 +4,30 @@ import android.content.Intent
 import android.util.Log
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import com.google.android.libraries.places.api.model.AutocompletePrediction
 import com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest
 import com.google.android.libraries.places.api.net.PlacesClient
+import com.here.sdk.core.GeoCoordinates
+import com.here.sdk.search.SearchEngine
+import com.here.sdk.search.SearchOptions
+import com.here.sdk.search.SuggestCallback
+import com.here.sdk.search.Suggestion
+import com.here.sdk.search.TextQuery
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.text.Collator
+import java.util.Locale
 
 class MainViewModel : ViewModel() {
     val SEARCH_TIMER = 1000L          //Time before starting a new search
@@ -25,49 +39,140 @@ class MainViewModel : ViewModel() {
     val results: State<List<AutocompletePrediction>> get() = _results
     fun setResults(value: List<AutocompletePrediction>) { _results.value = value }
     fun clearResults() { setResults(emptyList()) }
+    private val _resultsHERE = mutableStateOf<List<Suggestion>>(emptyList())
+    val resultsHERE: State<List<Suggestion>> get() = _resultsHERE
+    fun setHEREResults(value: List<Suggestion>) { _resultsHERE.value = value }
+    fun clearHEREResults() { setHEREResults(emptyList()) }
     var searchJob: Job? = null
     lateinit var placesClient: PlacesClient
     lateinit var scope: CoroutineScope
     private var _apiKey: String = ""
-    fun SetApiKey(value: String) { _apiKey = value }
+    fun setApiKey(value: String) { _apiKey = value }
+    private var _hereAppId: String = ""
+    fun setHEREAppId(value: String) { _hereAppId = value }
+    private var _searchOptions: SearchOptions? = null
+    fun setHERESearchOptions(options: SearchOptions) { _searchOptions = options }
+    private var _searchEngine: SearchEngine? = null
+    fun setHereSearchEngine(engine: SearchEngine) { _searchEngine = engine }
+    private lateinit var _geoCode: GeoCoordinates
+    fun setCurrentGeoCoordinate(value: GeoCoordinates) { _geoCode = value }
 
-    fun WaitAndSearchMaps(){
+    fun waitAndSearchMaps(){
         searchJob?.cancel()
         try {
             searchJob = scope.launch {
                 delay(SEARCH_TIMER)
-                SearchMaps()
+                searchMaps()
             }
         }
         catch (e: Exception) {
             Log.e("SCOPE", "Coroutine Scope is not available", e)
         }
     }
-    private suspend fun SearchMaps(){
+    private suspend fun searchMaps(){
         try {
-            val req = FindAutocompletePredictionsRequest.builder()
-                .setQuery(query.value)
-                .build()
-            Log.i("REQUEST",req.query?: "")
-            placesClient.findAutocompletePredictions(req)
-                .addOnSuccessListener { res -> _results.value = res.autocompletePredictions }
-                .addOnFailureListener { e ->
-                    _results.value = emptyList()
-                    Log.e("GOOGLE API","Failed to retrieve search results",e)
-                }
-                .await()
+            hereMapsSearch()
+            //GoogleMapsSearch()
         }
         catch(e: Exception){
             Log.e("GOOGLE API", "Search throwing exception", e)
         }
     }
 
+    private suspend fun googleMapsSearch(){
+        if (query.value.isEmpty()){
+            setResults(emptyList())
+            return
+        }
 
-    fun OpenPlaceInMap(placeId: String, context: Context){
-        val mockUrl = "https://www.google.com/maps/place/%C4%90%C3%AA%CC%80n+Qua%CC%81n+Tha%CC%81nh/@21.0430206,105.8262455,15z/data=!4m6!3m5!1s0x3135aba58b5921c3:0x31329cb3632aabef!8m2!3d21.0430175!4d105.8365462!16s%2Fm%2F09gnzj1?entry=ttu"
-        val mapsUrl = "https://www.google.com/maps/search/?api=1&query_place_id=$placeId"
-        val intent = Intent(Intent.ACTION_VIEW, mapsUrl.toUri())
+        val req = FindAutocompletePredictionsRequest.builder()
+            .setQuery(query.value)
+            .build()
+        placesClient.findAutocompletePredictions(req)
+            .addOnSuccessListener { res -> _results.value = res.autocompletePredictions }
+            .addOnFailureListener { e ->
+                _results.value = emptyList()
+                Log.e("GOOGLE API","Failed to retrieve search results",e)
+            }
+            .await()
+    }
+
+    private suspend fun hereMapsSearch(){
+        if (query.value.isEmpty()) {
+            setHEREResults(emptyList())
+            return
+        }
+        val suggestCallback = SuggestCallback{e, results ->
+            if (e != null){
+                Log.e("HERE API", e.name)
+                setHEREResults(emptyList())
+                return@SuggestCallback
+            }
+
+            setHEREResults(results?.filterNotNull() ?: emptyList())
+        }
+        val textQuery = TextQuery(query.value, TextQuery.Area(_geoCode))
+        _searchEngine!!.suggestByText(textQuery, _searchOptions ?: SearchOptions(), suggestCallback)
+    }
+
+    fun openPlaceInMap(lat:Double, long:Double, context: Context) {
+        val mapsUrl = "https://maps.google.com/?q=$lat, $long".toUri()
+        val intent = Intent(Intent.ACTION_VIEW, mapsUrl)
         intent.setPackage("com.google.android.apps.maps")
-        context.startActivity(intent)
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+        } else {
+            val browserIntent = Intent(Intent.ACTION_VIEW, mapsUrl)
+            context.startActivity(browserIntent)
+        }
+    }
+
+    fun openPlaceInMap(placeId: String, context: Context){
+        val mapsUrl = "https://www.google.com/maps/search/?api=1&query_place_id=$placeId".toUri()
+        val intent = Intent(Intent.ACTION_VIEW, mapsUrl)
+        intent.setPackage("com.google.android.apps.maps")
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+        } else {
+            val browserIntent = Intent(Intent.ACTION_VIEW, mapsUrl)
+            context.startActivity(browserIntent)
+        }
+    }
+    fun highlightKeyword(text: String, keyword: String, color: Color = Color.Black): AnnotatedString{
+        if (text.isEmpty() || keyword.isEmpty()) return buildAnnotatedString { append(text) }
+        var startIndex = getKeywordIndex(text, keyword)
+        return buildAnnotatedString {
+            withStyle(style = SpanStyle(color = color)) {
+                append(text)
+            }
+
+            while (startIndex >= 0) {
+                Log.i("START INDEX", startIndex.toString())
+                addStyle(
+                    SpanStyle(fontWeight = FontWeight.Bold),
+                    startIndex,
+                    startIndex + keyword.length
+                )
+                startIndex = getKeywordIndex(text, keyword, startIndex + keyword.length + 1)
+            }
+        }
+    }
+
+    fun getKeywordIndex(text: String, keyword: String, startIndex: Int = 0, locale: Locale = Locale.getDefault()): Int {
+        if (startIndex > text.length) return -1
+
+        val collator = Collator.getInstance(locale).apply {
+            strength = Collator.PRIMARY // ignores case and accents
+        }
+
+        val t = text.substring(startIndex)
+
+        for (i in 0..t.length - keyword.length) {
+            val slice = t.substring(i, i + keyword.length)
+            if (collator.compare(slice, keyword) == 0) {
+                return i + startIndex
+            }
+        }
+        return -1
     }
 }

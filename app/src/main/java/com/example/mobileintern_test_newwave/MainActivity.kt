@@ -1,8 +1,9 @@
 package com.example.mobileintern_test_newwave
 
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.text.SpannableString
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -24,8 +25,6 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
@@ -34,18 +33,24 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.coroutineScope
 import com.example.mobileintern_test_newwave.ui.theme.MobileIntern_Test_NewWaveTheme
 import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.AutocompletePrediction
+import com.here.sdk.core.GeoCoordinates
+import com.here.sdk.core.LanguageCode
+import com.here.sdk.core.engine.AuthenticationMode
+import com.here.sdk.core.engine.SDKNativeEngine
+import com.here.sdk.core.engine.SDKOptions
+import com.here.sdk.core.errors.InstantiationErrorException
+import com.here.sdk.search.SearchEngine
+import com.here.sdk.search.SearchOptions
+import com.here.sdk.search.Suggestion
 
 private lateinit var viewModel: MainViewModel
 class MainActivity : ComponentActivity() {
@@ -58,13 +63,50 @@ class MainActivity : ComponentActivity() {
                 Column {
                     SearchBar()
                     Result()
-                    ResultItem_Mock()
                 }
             }
         }
     }
 
     private fun init(){
+        viewModel = MainViewModel()
+//        initGoogleMaps()
+        initHEREPlatform()
+
+        viewModel.scope = lifecycle.coroutineScope
+    }
+
+    private fun initHEREPlatform(){
+        val ai = packageManager.getApplicationInfo(this.packageName, PackageManager.GET_META_DATA)
+        val bundle = ai.metaData
+
+        val accessKeyID = bundle.getString("platform.here.ACCESS_KEY_ID") ?: ""
+        val accessKeySecret = bundle.getString("platform.here.ACCESS_KEY_SECRET") ?: ""
+        val authenticationMode = AuthenticationMode.withKeySecret(accessKeyID, accessKeySecret)
+        val apiKey = bundle.getString("platform.here.API_KEY") ?: ""
+        val appId = bundle.getString("platform.here.APP_ID") ?: ""
+        viewModel.setApiKey(apiKey)
+        viewModel.setHEREAppId(appId)
+
+        val options = SDKOptions(authenticationMode)
+        try {
+            val context = this
+            SDKNativeEngine.makeSharedInstance(context, options)
+        } catch (e: InstantiationErrorException) {
+            throw RuntimeException("Initialization of HERE SDK failed: " + e.error.name)
+        }
+
+        val searchOptions = SearchOptions()
+        searchOptions.languageCode = LanguageCode.VI_VN
+        searchOptions.maxItems = 30
+        viewModel.setHERESearchOptions(searchOptions)
+
+        val searchEngine = SearchEngine()
+        viewModel.setHereSearchEngine(searchEngine)
+        viewModel.setCurrentGeoCoordinate(GeoCoordinates(0.0,0.0))
+    }
+
+    private fun initGoogleMaps(){
         viewModel = MainViewModel()
         if (!Places.isInitialized()){
             val ai = packageManager.getApplicationInfo(this.packageName, PackageManager.GET_META_DATA)
@@ -75,7 +117,21 @@ class MainActivity : ComponentActivity() {
         }
 
         viewModel.placesClient = Places.createClient(this)
-        viewModel.scope = lifecycle.coroutineScope
+    }
+
+    private fun disposeHEREPlatform(){
+        // Free HERE SDK resources before the application shuts down.
+        // Usually, this should be called only on application termination.
+        // Afterwards, the HERE SDK is no longer usable unless it is initialized again.
+        SDKNativeEngine.getSharedInstance()?.dispose()
+        // For safety reasons, we explicitly set the shared instance to null to avoid situations,
+        // where a disposed instance is accidentally reused.
+        SDKNativeEngine.setSharedInstance(null)
+    }
+
+    override fun onDestroy() {
+        disposeHEREPlatform()
+        super.onDestroy()
     }
 }
 
@@ -105,21 +161,14 @@ fun SearchBar(){
 @Composable
 fun Result(){
     val results by viewModel.results
-    val offset = remember { mutableStateOf(0f) }
-    LazyColumn(modifier = Modifier
-//        .scrollable(
-//        orientation = Orientation.Vertical,
-//        // state for Scrollable, describes how consume scroll amount
-//        state =
-//            rememberScrollableState { delta ->
-//                // use the scroll data and indicate how much this element consumed.
-//                // unconsumed deltas will be propagated to nested scrollables (if present)
-//                offset.value = offset.value + delta // update the state
-//                delta // indicate that we consumed all the pixels available
-//            },
-//            )
-    ) {
+    val resultsHere by viewModel.resultsHERE
+    LazyColumn {
         results.forEachIndexed { count, value ->
+            items(count = count) {
+                ResultItem(value)
+            }
+        }
+        resultsHere.forEachIndexed { count, value ->
             items(count = count) {
                 ResultItem(value)
             }
@@ -131,13 +180,49 @@ fun Result(){
 fun ResultItem(location: AutocompletePrediction){
     val query = viewModel.query.value
     val text = buildAnnotatedString {
-        append(HighlightKeyword(location.getPrimaryText(null), query))
+        append(viewModel.highlightKeyword(location.getPrimaryText(null).toString(), query))
         append(" ")
-        append(HighlightKeyword(location.getSecondaryText(null), query, Color.Gray))
+        append(viewModel.highlightKeyword(location.getSecondaryText(null).toString(), query, Color.Gray))
     }
     val context = LocalContext.current
+
+    ResultItem(placeId = location.placeId, text = text, context = context)
+}
+
+@Composable
+fun ResultItem(location: Suggestion){
+    val query = viewModel.query.value
+    val text = buildAnnotatedString {
+        append(viewModel.highlightKeyword(location.title, query))
+        append(" ")
+        append(viewModel.highlightKeyword(location.place?.address?.addressText ?: "", query, Color.Gray))
+    }
+    val geoCoordinates = location.place?.geoCoordinates
+    if (geoCoordinates == null) return
+    val context = LocalContext.current
+
+    ResultItem(geoCoordinates = geoCoordinates, text = text, context = context)
+}
+
+@Composable
+fun ResultItem(placeId: String? = null, geoCoordinates: GeoCoordinates? = null, text: AnnotatedString, context: Context){
+    if (placeId == null && geoCoordinates == null) {
+        Log.e("PRINT RESULT", "Cannot retrieve location data")
+        return
+    }
+
+    var onClick = {}
+
+    if (placeId != null){
+        onClick = { viewModel.openPlaceInMap(placeId, context) }
+    }
+
+    if (geoCoordinates != null){
+        onClick = { viewModel.openPlaceInMap(geoCoordinates.latitude, geoCoordinates.longitude, context) }
+    }
+
     Surface(modifier = Modifier.fillMaxWidth(),
-        onClick ={ viewModel.OpenPlaceInMap(location.placeId, context) }) {
+        onClick = onClick) {
         Row (modifier = Modifier
             .fillMaxWidth()
             .background(color = Color.White)
@@ -146,11 +231,11 @@ fun ResultItem(location: AutocompletePrediction){
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Start
         ) {
-            Image(painterResource(R.drawable.location_pin), "Location pin", modifier = Modifier.weight(1f))
+            Image(painterResource(R.drawable.location_pin), "Location pin", contentScale = ContentScale.Fit, modifier = Modifier.padding(5.dp).weight(1f))
             Spacer(Modifier.width(5.dp))
             Text(text, modifier = Modifier.weight(8f), overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
             Spacer(Modifier.width(5.dp))
-            Image(painterResource(R.drawable.road_sign), "Road sign", modifier = Modifier.weight(1f))
+            Image(painterResource(R.drawable.road_sign), "Road sign", contentScale = ContentScale.Fit, modifier = Modifier.padding(5.dp).weight(1f))
         }
     }
 }
@@ -158,6 +243,7 @@ fun ResultItem(location: AutocompletePrediction){
 @Preview
 @Composable
 fun My_Preview(){
+    viewModel = MainViewModel()
     MobileIntern_Test_NewWaveTheme {
         Column (modifier = Modifier.background(Color.LightGray)) {
             SearchBar()
@@ -170,68 +256,26 @@ fun My_Preview(){
 @Composable
 fun ResultItem_Mock(){
     val placeId = "ChIJwyFZi6WrNTER76sqY7OcMjE"
-    val primaryText = SpannableString("Đền Quán Thánh")
-    val secondaryText = SpannableString("190 P. Quán Thánh, Quán Thánh, Ba Đình, Hà Nội 118810, Việt Nam")
+    val primaryText = "Đền Quán Thánh"
+    val secondaryText = "190 P. Quán Thánh, Quán Thánh, Ba Đình, Hà Nội 118810, Việt Nam"
     val keyword = "Thánh"
     val context = LocalContext.current
 
     val text = buildAnnotatedString {
-        append(HighlightKeyword(primaryText, keyword))
+        append(viewModel.highlightKeyword(primaryText, keyword))
         append(" ")
-        append(HighlightKeyword(secondaryText, keyword, Color.Gray))
+        append(viewModel.highlightKeyword(secondaryText, keyword, Color.Gray))
     }
-    Surface(modifier = Modifier.fillMaxWidth(),
-        onClick ={ viewModel.OpenPlaceInMap(placeId, context) }) {
-        Row (modifier = Modifier
-            .fillMaxWidth()
-            .background(color = Color.White)
-            .height(40.dp)
-            .padding(3.dp, 0.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Start
-        ) {
-            Image(painterResource(R.drawable.location_pin), "Location pin", modifier = Modifier.weight(1f))
-            Spacer(Modifier.width(5.dp))
-            Text(text, modifier = Modifier.weight(8f), overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-            Spacer(Modifier.width(5.dp))
-            Image(painterResource(R.drawable.road_sign), "Road sign", modifier = Modifier.weight(1f))
-        }
-    }
+
+    ResultItem(placeId = placeId, text = text, context = context)
 }
 
-private fun HighlightKeyword(text: SpannableString, keyword: String, color: Color? = null): AnnotatedString{
-    if (text.isEmpty()) return buildAnnotatedString { append(text) }
-    val name = "Long"
-    var startIndex = 0
-
-    val anno = buildAnnotatedString {
-        while (true) {
-            val index = text.indexOf(keyword, startIndex, ignoreCase = true)
-            if (index == -1) {
-                append(text.substring(startIndex))
-                break
-            }
-
-            append(text.substring(startIndex, index))
-
-            // Append highlighted keyword
-            withStyle(style = SpanStyle(fontWeight = FontWeight.ExtraBold)) {
-                append(text.substring(index, index + keyword.length))
-            }
-
-            startIndex = index + keyword.length
-        }
-    }
-    if (color != null) return buildAnnotatedString { withStyle(style = SpanStyle(color = color)){append(anno)} }
-
-    return anno
-}
 
 private fun onSearchValueChanged(value: String){
     viewModel.setQuery(value)
 
     if (!value.isEmpty()){
-        viewModel.WaitAndSearchMaps()
+        viewModel.waitAndSearchMaps()
     }
     else {
         viewModel.clearResults()

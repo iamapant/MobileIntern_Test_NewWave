@@ -38,9 +38,20 @@ android {
         buildConfig = true
         compose = true
     }
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 dependencies {
+    implementation(fileTree(mapOf(
+        "dir" to "libs",
+        "include" to listOf("*.aar", "*.jar"),
+        "exclude" to listOf("*mock*.jar")
+    )))
+    implementation(files("libs/heresdk-explore-android-4.23.5.0.220268.aar"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
