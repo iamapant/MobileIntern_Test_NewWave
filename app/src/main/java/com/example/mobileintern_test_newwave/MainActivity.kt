@@ -1,7 +1,9 @@
 package com.example.mobileintern_test_newwave
 
+import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.location.Location
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -38,8 +40,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.app.ActivityCompat
 import androidx.lifecycle.coroutineScope
 import com.example.mobileintern_test_newwave.ui.theme.MobileIntern_Test_NewWaveTheme
+import com.google.android.gms.location.LocationServices
 import com.google.android.libraries.places.api.Places
 import com.google.android.libraries.places.api.model.AutocompletePrediction
 import com.here.sdk.core.GeoCoordinates
@@ -72,6 +76,7 @@ class MainActivity : ComponentActivity() {
         viewModel = MainViewModel()
 //        initGoogleMaps()
         initHEREPlatform()
+        retrieveUsersLocation()
 
         viewModel.scope = lifecycle.coroutineScope
     }
@@ -118,6 +123,46 @@ class MainActivity : ComponentActivity() {
 
         viewModel.placesClient = Places.createClient(this)
     }
+
+    private fun retrieveUsersLocation(){
+        val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+
+        try {
+            if (ActivityCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
+                    1001
+                )
+                return
+            }
+
+            fusedLocationClient.lastLocation
+                .addOnSuccessListener { location ->
+                    if (location != null) {
+                        onAddSuccess(location)
+                    } else {
+                        Log.e("GPS", "Fail to retrieve user location")
+                        viewModel?.setCurrentGeoCoordinate(GeoCoordinates(0.0, 0.0))
+                    }
+                }
+                .addOnFailureListener {
+                    viewModel?.setCurrentGeoCoordinate(GeoCoordinates(0.0, 0.0))
+                }
+        }
+        catch (e:Exception) {
+            Log.e("GPS", "Error retrieving user location", e)
+        }
+    }
+
+    private fun onAddSuccess(location: Location){
+        viewModel?.setCurrentGeoCoordinate(GeoCoordinates(location.latitude, location.longitude))
+    }
+
 
     private fun disposeHEREPlatform(){
         // Free HERE SDK resources before the application shuts down.

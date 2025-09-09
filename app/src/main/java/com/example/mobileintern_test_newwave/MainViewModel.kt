@@ -147,7 +147,6 @@ class MainViewModel : ViewModel() {
             }
 
             while (startIndex >= 0) {
-                Log.i("START INDEX", startIndex.toString())
                 addStyle(
                     SpanStyle(fontWeight = FontWeight.Bold),
                     startIndex,
