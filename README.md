@@ -28,7 +28,7 @@ A sample Android application demonstrating location search and mapping using HER
   - Stateless composables that just render what the ViewModel provides.
 
 # Demo
-![Demo](https://drive.google.com/file/d/14gakCtmygbW6ZTf3MlNpLe4vFuopK1US/view?usp=drive_link)
+[Demo video](https://drive.google.com/uc?export=view&id=14gakCtmygbW6ZTf3MlNpLe4vFuopK1US)
 
 # Screenshot
-![Screenshot](https://drive.google.com/file/d/1FFlmCBCj7uroRvrzHROtOzdoOKl6c1Gn/view?usp=sharing)
+<img src="screenshot_mobileinter_test_newwave.png" alt="Screenshot" width="400"/>
