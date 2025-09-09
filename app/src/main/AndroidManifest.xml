@@ -12,8 +12,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MobileIntern_Test_NewWave">
         <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="YOUR_API_KEY_HERE" />
+            android:name="platform.here.ACCESS_KEY_ID"
+            android:value="YOUR_API_KEY_ID_HERE" />
+        <meta-data
+            android:name="platform.here.ACCESS_KEY_SECRET"
+            android:value="YOUR_API_KEY_SECRET_HERE" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
