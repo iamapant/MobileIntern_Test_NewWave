@@ -85,13 +85,15 @@ class MainActivity : ComponentActivity() {
         val ai = packageManager.getApplicationInfo(this.packageName, PackageManager.GET_META_DATA)
         val bundle = ai.metaData
 
-        val accessKeyID = bundle.getString("platform.here.ACCESS_KEY_ID") ?: ""
-        val accessKeySecret = bundle.getString("platform.here.ACCESS_KEY_SECRET") ?: ""
+        val accessKeyID = bundle.getString("com.here.access.key.id") ?: ""
+        val accessKeySecret = bundle.getString("com.here.access.key.secret") ?: ""
         val authenticationMode = AuthenticationMode.withKeySecret(accessKeyID, accessKeySecret)
-        val apiKey = bundle.getString("platform.here.API_KEY") ?: ""
-        val appId = bundle.getString("platform.here.APP_ID") ?: ""
+        val apiKey = bundle.getString("com.here.access.key.api_key") ?: ""
+        val appId = bundle.getString("com.here.access.key.app_code") ?: ""
         viewModel.setApiKey(apiKey)
         viewModel.setHEREAppId(appId)
+
+        Log.w("KEYS", "AccessId $accessKeyID, AccessSecret $accessKeySecret, Api $apiKey, AppId $appId ")
 
         val options = SDKOptions(authenticationMode)
         try {
@@ -162,7 +164,6 @@ class MainActivity : ComponentActivity() {
     private fun onAddSuccess(location: Location){
         viewModel?.setCurrentGeoCoordinate(GeoCoordinates(location.latitude, location.longitude))
     }
-
 
     private fun disposeHEREPlatform(){
         // Free HERE SDK resources before the application shuts down.

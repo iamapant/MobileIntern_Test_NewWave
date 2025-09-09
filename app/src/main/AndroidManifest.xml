@@ -15,17 +15,20 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MobileIntern_Test_NewWave">
         <meta-data
-            android:name="platform.here.ACCESS_KEY_ID"
-            android:value="YOUR_KEY_HERE" />
+            android:name="com.google.android.geo.API_KEY"
+            android:value="GOOGLE_API_KEY" />
         <meta-data
-            android:name="platform.here.ACCESS_KEY_SECRET"
-            android:value="YOUR_KEY_HERE" />
+            android:name="com.here.access.key.id"
+            android:value="HERE_ACCESS_KEY_ID" />
         <meta-data
-            android:name="platform.here.APP_ID"
-            android:value="YOUR_KEY_HERE" />
+            android:name="com.here.access.key.secret"
+            android:value="HERE_ACCESS_KEY_SECRET" />
         <meta-data
-            android:name="platform.here.API_KEY"
-            android:value="YOUR_KEY_HERE" />
+            android:name="com.here.access.key.app_code"
+            android:value="HERE_APP_ID" />
+        <meta-data
+            android:name="com.here.access.key.api_key"
+            android:value="HERE_API_KEY" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
